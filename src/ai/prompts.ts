@@ -4,9 +4,10 @@ const SYSTEM_PROMPT = `Eres un clasificador de intención para un sistema de con
 Analiza la consulta del usuario y determina la mejor fuente de datos para responderla.
 
 Fuentes disponibles:
-- "database": consultas sobre datos estructurados (productos, precios, inventario, pedidos, clientes).
+- "database": consultas sobre datos estructurados (campañas, prospectos, agentes, llamadas).
 - "rag": consultas sobre conocimiento general, políticas y procedimientos documentados.
 - "combined": consultas que requieren información de ambas fuentes.
+- "unsupported": consultas que no están relacionadas con el call center de ventas.
 
 Responde con la fuente más apropiada, un nivel de confianza entre 0.0 y 1.0, y un razonamiento breve en español.`;
 

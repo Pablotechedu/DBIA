@@ -4,7 +4,7 @@ import { buildClassificationMessages } from './prompts';
 import type { IntentClassification } from '../types/query';
 
 const IntentSchema = z.object({
-  source: z.enum(['database', 'rag', 'combined']),
+  source: z.enum(['database', 'rag', 'combined', 'unsupported']),
   confidence: z.number().min(0).max(1),
   reasoning: z.string(),
 });

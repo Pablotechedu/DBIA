@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express, { NextFunction, Request, Response } from "express";
 import documentRoutes from "./routes/documentRoutes";
+import queryRoutes from "./routes/queryRoutes";
 
 const app = express();
 const PORT = process.env.PORT ?? 3000;
@@ -13,6 +14,7 @@ app.get("/health", (_req: Request, res: Response) => {
 });
 
 app.use("/api/documents", documentRoutes);
+app.use("/api/query", queryRoutes);
 
 // Manejador de errores global
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
