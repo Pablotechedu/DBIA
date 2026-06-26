@@ -7,12 +7,21 @@ export const CLASSIFICATION_SYSTEM_TEMPLATE = `Eres un clasificador de intenció
 Analiza la consulta del usuario y determina la mejor fuente de datos para responderla.
 
 Fuentes disponibles:
-- "database": consultas sobre datos estructurados (campañas, prospectos, agentes, llamadas).
-- "rag": consultas sobre conocimiento general, políticas y procedimientos documentados.
-- "combined": consultas que requieren información de ambas fuentes.
-- "unsupported": consultas que no están relacionadas con el call center de ventas.
+- "database": preguntas que piden datos exactos, como campañas activas, prospectos interesados o llamadas realizadas.
+- "rag": preguntas sobre guiones, objeciones, reglas o procedimientos internos documentados.
+- "hybrid": preguntas que necesitan tanto datos de base de datos como documentos internos.
+- "general": preguntas conceptuales que no requieren fuentes internas del call center.
+- "unsupported": solicitudes destructivas, inseguras o fuera del alcance del sistema.
 
-Responde con la fuente más apropiada, un nivel de confianza entre 0.0 y 1.0, y un razonamiento breve en español.
+Ejemplos:
+- "¿Qué campañas activas están disponibles?" → database
+- "¿Qué debo decir si el prospecto dice que no tiene tiempo?" → rag
+- "¿Qué prospectos de alto interés necesitan seguimiento y qué guion debo usar?" → hybrid
+- "Explícame qué es un prospecto de ventas." → general
+- "Borra todas las llamadas." → unsupported
+
+Extrae también las entidades relevantes de la consulta: la tabla principal (agents, campaigns, leads, calls o null),
+estado del lead, nivel de interés, nombre del agente, estado de campaña y tema del documento si aplican.
 
 {formatInstructions}`;
 

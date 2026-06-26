@@ -11,7 +11,10 @@ const CHUNK_OVERLAP = 120;
 /** Parámetros de ingesta de un documento de texto. */
 export interface IngestTextInput {
   content: string;
-  metadata?: Record<string, unknown>;
+  title?: string;
+  category?: string;
+  tags?: string[];
+  filename?: string;
 }
 
 /** Resultado de la ingesta: cantidad de fragmentos almacenados. */
@@ -22,14 +25,21 @@ export interface IngestResult {
 /**
  * Fragmenta `content` en chunks con solapamiento, los vectoriza con el modelo de embeddings y
  * los persiste en la tabla `documents` mediante `SupabaseVectorStore`.
- * `metadata` se almacena como JSONB en cada fragmento y es opcional.
+ * Los metadatos (title, category, tags, filename) se almacenan como JSONB en cada fragmento.
  */
 export async function ingestTextDocument(input: IngestTextInput): Promise<IngestResult> {
-  const { content, metadata = {} } = input;
+  const { content, title, category, tags, filename } = input;
 
   if (!content || content.trim().length === 0) {
     throw new Error('El contenido del documento está vacío y no puede ingestarse.');
   }
+
+  // Construcción de la metadata a partir de los campos opcionales.
+  const metadata: Record<string, unknown> = {};
+  if (title) metadata.title = title;
+  if (category) metadata.category = category;
+  if (tags && tags.length > 0) metadata.tags = tags;
+  if (filename) metadata.filename = filename;
 
   // 1. Documento de LangChain con su metadata.
   const document = new Document({ pageContent: content, metadata });

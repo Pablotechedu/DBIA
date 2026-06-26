@@ -20,8 +20,16 @@ const MockStringOutputParser = StringOutputParser as jest.MockedClass<typeof Str
 
 const CLASSIFICATION_DB: IntentClassification = {
   source: 'database',
+  intent: 'Consulta sobre datos de campañas.',
   confidence: 0.9,
-  reasoning: 'La consulta es sobre datos de campañas.',
+  entities: {
+    table: 'campaigns',
+    leadStatus: null,
+    interestLevel: null,
+    agentName: null,
+    campaignStatus: 'active',
+    documentTopic: null,
+  },
 };
 
 function buildMockChain(resolvedAnswer: string) {
@@ -84,13 +92,13 @@ describe('generateAnswer', () => {
       );
     });
 
-    it('pasa el reasoning de la clasificación al invoke', async () => {
+    it('pasa el intent de la clasificación al invoke', async () => {
       const { mockInvoke } = buildMockChain('respuesta');
 
       await generateAnswer({ question: 'pregunta', classification: CLASSIFICATION_DB });
 
       expect(mockInvoke).toHaveBeenCalledWith(
-        expect.objectContaining({ reasoning: 'La consulta es sobre datos de campañas.' })
+        expect.objectContaining({ intent: 'Consulta sobre datos de campañas.' })
       );
     });
 

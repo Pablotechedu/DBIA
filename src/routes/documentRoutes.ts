@@ -37,14 +37,29 @@ router.post(
     }
 
     try {
-      const metadata: Record<string, unknown> = { filename: file.originalname };
-      const category = req.body?.category;
-      if (typeof category === 'string' && category.trim().length > 0) {
-        metadata.category = category.trim();
-      }
+      const title = typeof req.body?.title === 'string' ? req.body.title.trim() : undefined;
+      const category = typeof req.body?.category === 'string' ? req.body.category.trim() : undefined;
+      const tagsRaw = typeof req.body?.tags === 'string' ? req.body.tags.trim() : undefined;
+      const tags = tagsRaw ? tagsRaw.split(',').map((t: string) => t.trim()).filter(Boolean) : undefined;
 
-      const { chunksIngested } = await ingestTextDocument({ content, metadata });
-      res.status(201).json({ mensaje: 'Documento ingestado correctamente.', chunksIngested });
+      const { chunksIngested } = await ingestTextDocument({
+        content,
+        title: title || undefined,
+        category: category || undefined,
+        tags,
+        filename: file.originalname,
+      });
+
+      res.status(201).json({
+        mensaje: 'Documento ingestado correctamente.',
+        document: {
+          title: title ?? null,
+          category: category ?? null,
+          filename: file.originalname,
+          tags: tags ?? [],
+        },
+        chunksIngested,
+      });
     } catch (err) {
       next(err);
     }

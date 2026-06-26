@@ -5,16 +5,24 @@ import { getChatModel } from './chatModel';
 import { CLASSIFICATION_SYSTEM_TEMPLATE, CLASSIFICATION_HUMAN_TEMPLATE } from './prompts';
 import type { IntentClassification } from '../types/query';
 
-// El esquema Zod refleja exactamente IntentClassification para que el parser pueda validar la salida.
+// El esquema Zod refleja exactamente IntentClassification, incluidas todas las entidades.
 const IntentSchema = z.object({
-  source: z.enum(['database', 'rag', 'combined', 'unsupported']),
+  source: z.enum(['database', 'rag', 'hybrid', 'general', 'unsupported']),
+  intent: z.string(),
   confidence: z.number().min(0).max(1),
-  reasoning: z.string(),
+  entities: z.object({
+    table: z.enum(['agents', 'campaigns', 'leads', 'calls']).nullable(),
+    leadStatus: z.string().nullable(),
+    interestLevel: z.string().nullable(),
+    agentName: z.string().nullable(),
+    campaignStatus: z.string().nullable(),
+    documentTopic: z.string().nullable(),
+  }),
 });
 
 // Tipos mínimos para evitar que el compilador resuelva los genéricos recursivos de LangChain
 // (TS2589). Las aserciones solo afectan los tipos en compilación; en ejecución se usan los
-// objetos reales (StructuredOutputParser y el chain de Runnables).
+// objetos reales.
 interface FormatParser {
   getFormatInstructions(): string;
 }

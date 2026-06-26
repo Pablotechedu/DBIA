@@ -70,7 +70,69 @@ describe('POST /api/documents/ingest', () => {
         .attach('file', TXT, 'politicas.txt');
 
       const arg = mockIngestTextDocument.mock.calls[0][0];
-      expect(arg.metadata).toEqual(expect.objectContaining({ filename: 'politicas.txt' }));
+      expect(arg.filename).toBe('politicas.txt');
+    });
+
+    it('pasa el campo title al servicio cuando se proporciona', async () => {
+      mockIngestTextDocument.mockResolvedValue({ chunksIngested: 2 });
+      const app = buildApp();
+
+      await request(app)
+        .post('/api/documents/ingest')
+        .field('title', 'Guion de llamada inicial')
+        .attach('file', TXT, 'guion.txt');
+
+      expect(mockIngestTextDocument).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Guion de llamada inicial' })
+      );
+    });
+
+    it('pasa el campo category al servicio cuando se proporciona', async () => {
+      mockIngestTextDocument.mockResolvedValue({ chunksIngested: 2 });
+      const app = buildApp();
+
+      await request(app)
+        .post('/api/documents/ingest')
+        .field('category', 'Ventas')
+        .attach('file', TXT, 'manual.txt');
+
+      expect(mockIngestTextDocument).toHaveBeenCalledWith(
+        expect.objectContaining({ category: 'Ventas' })
+      );
+    });
+
+    it('pasa el campo tags separados por coma como array al servicio', async () => {
+      mockIngestTextDocument.mockResolvedValue({ chunksIngested: 2 });
+      const app = buildApp();
+
+      await request(app)
+        .post('/api/documents/ingest')
+        .field('tags', 'guion,llamada,ventas')
+        .attach('file', TXT, 'manual.txt');
+
+      expect(mockIngestTextDocument).toHaveBeenCalledWith(
+        expect.objectContaining({ tags: ['guion', 'llamada', 'ventas'] })
+      );
+    });
+
+    it('incluye document con title, category, filename y tags en la respuesta', async () => {
+      mockIngestTextDocument.mockResolvedValue({ chunksIngested: 13 });
+      const app = buildApp();
+
+      const res = await request(app)
+        .post('/api/documents/ingest')
+        .field('title', 'Guion de llamada inicial')
+        .field('category', 'Ventas')
+        .field('tags', 'guion,llamada,ventas')
+        .attach('file', TXT, 'guion.txt');
+
+      expect(res.body.document).toEqual({
+        title: 'Guion de llamada inicial',
+        category: 'Ventas',
+        filename: 'guion.txt',
+        tags: ['guion', 'llamada', 'ventas'],
+      });
+      expect(res.body.chunksIngested).toBe(13);
     });
   });
 

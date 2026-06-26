@@ -12,6 +12,7 @@ export interface AnswerInput {
 
 const SYSTEM_TEMPLATE = `Eres un asistente inteligente para un call center de ventas.
 Responde las preguntas de los agentes de ventas de forma clara, precisa y siempre en español.
+No inventes registros ni datos cuando no exista contexto suficiente.
 
 Información de la base de datos:
 {databaseContext}
@@ -21,7 +22,7 @@ Información de documentos:
 
 const HUMAN_TEMPLATE = `Pregunta: {question}
 
-Razonamiento de clasificación: {reasoning}
+Intención detectada: {intent}
 
 Proporciona una respuesta útil y completa en español.`;
 
@@ -37,7 +38,7 @@ export async function generateAnswer(input: AnswerInput): Promise<string> {
 
   return chain.invoke({
     question,
-    reasoning: classification.reasoning,
+    intent: classification.intent,
     databaseContext: databaseContext ?? 'No hay datos de base de datos disponibles.',
     documentContext: documentContext ?? 'No hay documentos relevantes disponibles.',
   });

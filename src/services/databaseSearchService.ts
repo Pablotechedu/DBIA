@@ -1,22 +1,24 @@
 import { getSupabaseClient } from '../db/supabaseClient';
-import type { QueryResult } from '../types/query';
-
-type DbTopic = 'campaigns' | 'leads' | 'agents' | 'calls' | 'general';
+import type { IntentClassification, QueryResult } from '../types/query';
 
 interface CampaignRow {
   name: string;
   product_name: string;
   status: string;
+  start_date: string | null;
+  end_date: string | null;
   target_leads_count: number;
 }
 
 interface LeadRow {
+  full_name: string;
   status: string;
   interest_level: string;
+  phone: string | null;
 }
 
 interface AgentRow {
-  name: string;
+  full_name: string;
   status: string;
   email: string;
 }
@@ -24,6 +26,7 @@ interface AgentRow {
 interface CallRow {
   result: string;
   duration_seconds: number;
+  call_date: string;
 }
 
 interface DbQueryResult {
@@ -31,38 +34,29 @@ interface DbQueryResult {
   metadata: Record<string, unknown>;
 }
 
-/** Detecta el tema de la consulta a partir de palabras clave. */
-function detectTopic(query: string): DbTopic {
-  const q = query.toLowerCase();
-  if (/campa[ñn]a|producto|seguro|cr[eé]dito|inversi[oó]n/.test(q)) return 'campaigns';
-  if (/lead|prospecto|cliente|inter[eé]s/.test(q)) return 'leads';
-  if (/agente|asesor|vendedor|representante/.test(q)) return 'agents';
-  if (/llamada|call|contacto|duraci[oó]n/.test(q)) return 'calls';
-  return 'general';
-}
-
-async function queryCampaigns(): Promise<DbQueryResult> {
+async function queryCampaigns(campaignStatus?: string | null): Promise<DbQueryResult> {
   const client = getSupabaseClient();
-  const { data, error } = await client
+  let q = client
     .from('campaigns')
-    .select('name, product_name, status, target_leads_count')
+    .select('name, product_name, status, start_date, end_date, target_leads_count')
     .order('status');
 
+  if (campaignStatus) q = q.eq('status', campaignStatus);
+
+  const { data, error } = await q;
   if (error) throw new Error(`Error consultando campañas: ${error.message}`);
 
   const rows = (data ?? []) as CampaignRow[];
-
   if (rows.length === 0) {
     return {
-      answer: 'No se encontraron campañas en la base de datos.',
-      metadata: { topic: 'campaigns', total: 0 },
+      answer: 'No se encontraron campañas con los criterios indicados.',
+      metadata: { table: 'campaigns', total: 0 },
     };
   }
 
   const active = rows.filter(c => c.status === 'active');
   const other = rows.filter(c => c.status !== 'active');
-
-  const lines: string[] = [`Se encontraron ${rows.length} campaña(s) en total.`];
+  const lines: string[] = [`Se encontraron ${rows.length} campaña(s).`];
 
   if (active.length > 0) {
     lines.push(`\nCampañas activas (${active.length}):`);
@@ -72,107 +66,111 @@ async function queryCampaigns(): Promise<DbQueryResult> {
   }
   if (other.length > 0) {
     lines.push(`\nOtras campañas (${other.length}):`);
-    other.forEach(c =>
-      lines.push(`- ${c.name} | Producto: ${c.product_name} | Estado: ${c.status}`)
-    );
+    other.forEach(c => lines.push(`- ${c.name} | Producto: ${c.product_name} | Estado: ${c.status}`));
   }
 
   return {
     answer: lines.join('\n'),
-    metadata: { topic: 'campaigns', total: rows.length, active: active.length },
+    metadata: { table: 'campaigns', total: rows.length, active: active.length },
   };
 }
 
-async function queryLeads(): Promise<DbQueryResult> {
+async function queryLeads(leadStatus?: string | null, interestLevel?: string | null): Promise<DbQueryResult> {
   const client = getSupabaseClient();
-  const { data, error } = await client
+  let q = client
     .from('leads')
-    .select('status, interest_level')
-    .order('status');
+    .select('full_name, status, interest_level, phone')
+    .order('interest_level');
 
+  if (leadStatus) q = q.eq('status', leadStatus);
+  if (interestLevel) q = q.eq('interest_level', interestLevel);
+
+  const { data, error } = await q;
   if (error) throw new Error(`Error consultando prospectos: ${error.message}`);
 
   const rows = (data ?? []) as LeadRow[];
-
   if (rows.length === 0) {
     return {
-      answer: 'No se encontraron prospectos en la base de datos.',
-      metadata: { topic: 'leads', total: 0 },
+      answer: 'No se encontraron prospectos con los criterios indicados.',
+      metadata: { table: 'leads', total: 0 },
     };
   }
 
-  const byStatus: Record<string, number> = {};
-  const byInterest: Record<string, number> = {};
-  for (const row of rows) {
-    byStatus[row.status] = (byStatus[row.status] ?? 0) + 1;
-    byInterest[row.interest_level] = (byInterest[row.interest_level] ?? 0) + 1;
-  }
-
-  const lines: string[] = [`Se encontraron ${rows.length} prospecto(s) en total.`];
-  lines.push('\nDistribución por estado:');
-  Object.entries(byStatus).forEach(([st, count]) => lines.push(`- ${st}: ${count}`));
-  lines.push('\nDistribución por nivel de interés:');
-  Object.entries(byInterest).forEach(([lvl, count]) => lines.push(`- ${lvl}: ${count}`));
+  const lines: string[] = [`Se encontraron ${rows.length} prospecto(s).`];
+  rows.slice(0, 10).forEach(l =>
+    lines.push(`- ${l.full_name} | Estado: ${l.status} | Interés: ${l.interest_level}`)
+  );
+  if (rows.length > 10) lines.push(`... y ${rows.length - 10} más.`);
 
   return {
     answer: lines.join('\n'),
-    metadata: { topic: 'leads', total: rows.length },
+    metadata: { table: 'leads', total: rows.length },
   };
 }
 
-async function queryAgents(): Promise<DbQueryResult> {
+async function queryAgents(agentName?: string | null): Promise<DbQueryResult> {
   const client = getSupabaseClient();
-  const { data, error } = await client
+  let q = client
     .from('agents')
-    .select('name, status, email')
-    .order('name');
+    .select('full_name, status, email')
+    .order('full_name');
 
+  if (agentName) q = q.ilike('full_name', `%${agentName}%`);
+
+  const { data, error } = await q;
   if (error) throw new Error(`Error consultando agentes: ${error.message}`);
 
   const rows = (data ?? []) as AgentRow[];
-
   if (rows.length === 0) {
     return {
-      answer: 'No se encontraron agentes en la base de datos.',
-      metadata: { topic: 'agents', total: 0 },
+      answer: 'No se encontraron agentes con los criterios indicados.',
+      metadata: { table: 'agents', total: 0 },
     };
   }
 
   const active = rows.filter(a => a.status === 'active');
-  const other = rows.filter(a => a.status !== 'active');
-
-  const lines: string[] = [`Se encontraron ${rows.length} agente(s) registrado(s).`];
-
+  const lines: string[] = [`Se encontraron ${rows.length} agente(s).`];
   if (active.length > 0) {
     lines.push(`\nAgentes activos (${active.length}):`);
-    active.forEach(a => lines.push(`- ${a.name} (${a.email})`));
+    active.forEach(a => lines.push(`- ${a.full_name} (${a.email})`));
   }
-  if (other.length > 0) {
-    lines.push(`\nAgentes inactivos/con permiso (${other.length}):`);
-    other.forEach(a => lines.push(`- ${a.name} | Estado: ${a.status}`));
+  const inactive = rows.filter(a => a.status !== 'active');
+  if (inactive.length > 0) {
+    lines.push(`\nAgentes inactivos/con permiso (${inactive.length}):`);
+    inactive.forEach(a => lines.push(`- ${a.full_name} | Estado: ${a.status}`));
   }
 
   return {
     answer: lines.join('\n'),
-    metadata: { topic: 'agents', total: rows.length, active: active.length },
+    metadata: { table: 'agents', total: rows.length, active: active.length },
   };
 }
 
-async function queryCalls(): Promise<DbQueryResult> {
+async function queryCalls(agentName?: string | null, callResult?: string | null): Promise<DbQueryResult> {
   const client = getSupabaseClient();
-  const { data, error } = await client
-    .from('calls')
-    .select('result, duration_seconds')
-    .order('result');
 
+  // Si se filtra por nombre de agente, se hace join con agents.
+  let q = agentName
+    ? client
+        .from('calls')
+        .select('result, duration_seconds, call_date, agents!inner(full_name)')
+        .ilike('agents.full_name', `%${agentName}%`)
+        .order('call_date', { ascending: false })
+    : client
+        .from('calls')
+        .select('result, duration_seconds, call_date')
+        .order('call_date', { ascending: false });
+
+  if (callResult) q = q.eq('result', callResult);
+
+  const { data, error } = await q;
   if (error) throw new Error(`Error consultando llamadas: ${error.message}`);
 
   const rows = (data ?? []) as CallRow[];
-
   if (rows.length === 0) {
     return {
-      answer: 'No se encontraron llamadas en la base de datos.',
-      metadata: { topic: 'calls', total: 0 },
+      answer: 'No se encontraron llamadas con los criterios indicados.',
+      metadata: { table: 'calls', total: 0 },
     };
   }
 
@@ -185,41 +183,42 @@ async function queryCalls(): Promise<DbQueryResult> {
   const avgSeconds = Math.round(totalSeconds / rows.length);
 
   const lines: string[] = [
-    `Se registraron ${rows.length} llamada(s) en total.`,
-    `Duración promedio: ${avgSeconds} segundos.`,
+    `Se registraron ${rows.length} llamada(s). Duración promedio: ${avgSeconds} segundos.`,
     '\nResultados:',
   ];
   Object.entries(byResult).forEach(([r, count]) => lines.push(`- ${r}: ${count}`));
 
   return {
     answer: lines.join('\n'),
-    metadata: { topic: 'calls', total: rows.length, avgDurationSeconds: avgSeconds },
+    metadata: { table: 'calls', total: rows.length, avgDurationSeconds: avgSeconds },
   };
 }
 
-/** Busca información estructurada en la base de datos relacional según la consulta. */
-export async function searchDatabase(query: string): Promise<QueryResult> {
-  const topic = detectTopic(query);
-
+/**
+ * Busca información estructurada en Supabase usando la clasificación de intención.
+ * La tabla y los filtros se derivan de `classification.entities`, no de SQL libre generado por el modelo.
+ */
+export async function searchDatabase(classification: IntentClassification): Promise<QueryResult> {
+  const { entities } = classification;
   let result: DbQueryResult;
 
-  switch (topic) {
+  switch (entities.table) {
     case 'campaigns':
-      result = await queryCampaigns();
+      result = await queryCampaigns(entities.campaignStatus);
       break;
     case 'leads':
-      result = await queryLeads();
+      result = await queryLeads(entities.leadStatus, entities.interestLevel);
       break;
     case 'agents':
-      result = await queryAgents();
+      result = await queryAgents(entities.agentName);
       break;
     case 'calls':
-      result = await queryCalls();
+      result = await queryCalls(entities.agentName, entities.leadStatus);
       break;
     default:
       result = {
         answer: 'Puede consultar información sobre campañas, prospectos (leads), agentes y llamadas del call center.',
-        metadata: { topic: 'general' },
+        metadata: { table: null },
       };
   }
 

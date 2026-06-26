@@ -21,8 +21,16 @@ const mockFromZodSchema = StructuredOutputParser.fromZodSchema as jest.Mock;
 
 const EXPECTED: IntentClassification = {
   source: 'database',
+  intent: 'Consulta de campañas activas.',
   confidence: 0.9,
-  reasoning: 'La consulta menciona el precio de un producto específico.',
+  entities: {
+    table: 'campaigns',
+    leadStatus: null,
+    interestLevel: null,
+    agentName: null,
+    campaignStatus: 'active',
+    documentTopic: null,
+  },
 };
 
 function buildMockChain(resolved: IntentClassification) {
@@ -51,7 +59,7 @@ describe('classifyIntent', () => {
     it('crea un parser estructurado a partir del esquema Zod', async () => {
       buildMockChain(EXPECTED);
 
-      await classifyIntent('¿Cuál es el precio del producto X?');
+      await classifyIntent('¿Cuáles son las campañas activas?');
 
       expect(mockFromZodSchema).toHaveBeenCalledTimes(1);
     });
@@ -59,7 +67,7 @@ describe('classifyIntent', () => {
     it('crea un ChatPromptTemplate con mensajes de sistema y usuario', async () => {
       buildMockChain(EXPECTED);
 
-      await classifyIntent('¿Cuál es el precio del producto X?');
+      await classifyIntent('¿Cuáles son las campañas activas?');
 
       expect(ChatPromptTemplate.fromMessages).toHaveBeenCalledWith([
         ['system', expect.stringContaining('{formatInstructions}')],
@@ -98,21 +106,24 @@ describe('classifyIntent', () => {
     it('pasa la consulta del usuario al invoke de la cadena', async () => {
       const { mockInvoke } = buildMockChain(EXPECTED);
 
-      await classifyIntent('¿Cuántas unidades quedan?');
+      await classifyIntent('¿Cuántas campañas activas hay?');
 
       expect(mockInvoke).toHaveBeenCalledWith(
-        expect.objectContaining({ query: '¿Cuántas unidades quedan?' })
+        expect.objectContaining({ query: '¿Cuántas campañas activas hay?' })
       );
     });
   });
 
   describe('valor de retorno', () => {
-    it('retorna la IntentClassification producida por la cadena', async () => {
+    it('retorna la IntentClassification producida por la cadena con todos los campos', async () => {
       buildMockChain(EXPECTED);
 
-      const result = await classifyIntent('¿Cuál es el precio del producto X?');
+      const result = await classifyIntent('¿Cuáles son las campañas activas?');
 
       expect(result).toEqual(EXPECTED);
+      expect(result.intent).toBeDefined();
+      expect(result.entities).toBeDefined();
+      expect(result.entities.table).toBe('campaigns');
     });
   });
 

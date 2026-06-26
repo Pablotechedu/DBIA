@@ -15,34 +15,54 @@ const mockGenerateAnswer = generateAnswer as jest.MockedFunction<typeof generate
 const mockSearchDatabase = searchDatabase as jest.MockedFunction<typeof searchDatabase>;
 const mockSearchRag = searchRag as jest.MockedFunction<typeof searchRag>;
 
+const NULL_ENTITIES: IntentClassification['entities'] = {
+  table: 'campaigns',
+  leadStatus: null,
+  interestLevel: null,
+  agentName: null,
+  campaignStatus: 'active',
+  documentTopic: null,
+};
+
 const DB_CLASSIFICATION: IntentClassification = {
   source: 'database',
+  intent: 'Consulta sobre campañas activas.',
   confidence: 0.95,
-  reasoning: 'La consulta es sobre campañas.',
+  entities: NULL_ENTITIES,
 };
 
 const RAG_CLASSIFICATION: IntentClassification = {
   source: 'rag',
+  intent: 'Consulta sobre procedimientos documentados.',
   confidence: 0.88,
-  reasoning: 'La consulta es sobre procedimientos documentados.',
+  entities: { ...NULL_ENTITIES, table: null, campaignStatus: null, documentTopic: 'ventas' },
 };
 
-const COMBINED_CLASSIFICATION: IntentClassification = {
-  source: 'combined',
+const HYBRID_CLASSIFICATION: IntentClassification = {
+  source: 'hybrid',
+  intent: 'La consulta requiere datos de BD y documentos.',
   confidence: 0.8,
-  reasoning: 'La consulta requiere ambas fuentes.',
+  entities: NULL_ENTITIES,
+};
+
+const GENERAL_CLASSIFICATION: IntentClassification = {
+  source: 'general',
+  intent: 'Pregunta conceptual sin fuentes internas.',
+  confidence: 0.85,
+  entities: { ...NULL_ENTITIES, table: null, campaignStatus: null },
 };
 
 const UNSUPPORTED_CLASSIFICATION: IntentClassification = {
   source: 'unsupported',
+  intent: 'Solicitud fuera del alcance del sistema.',
   confidence: 0.9,
-  reasoning: 'La consulta no es relevante para el call center.',
+  entities: { ...NULL_ENTITIES, table: null, campaignStatus: null },
 };
 
 const DB_RESULT: QueryResult = {
   answer: 'Hay 5 campañas activas.',
   source: 'database',
-  metadata: { topic: 'campaigns', total: 5 },
+  metadata: { table: 'campaigns', total: 5 },
 };
 
 const RAG_RESULT: QueryResult = {
@@ -69,13 +89,13 @@ describe('handleQuery', () => {
   });
 
   describe('fuente "database"', () => {
-    it('llama a searchDatabase y no a searchRag', async () => {
+    it('llama a searchDatabase con la clasificación y no a searchRag', async () => {
       mockClassifyIntent.mockResolvedValue(DB_CLASSIFICATION);
       mockSearchDatabase.mockResolvedValue(DB_RESULT);
 
       await handleQuery('¿Cuántas campañas activas hay?');
 
-      expect(mockSearchDatabase).toHaveBeenCalledWith('¿Cuántas campañas activas hay?');
+      expect(mockSearchDatabase).toHaveBeenCalledWith(DB_CLASSIFICATION);
       expect(mockSearchRag).not.toHaveBeenCalled();
     });
 
@@ -96,7 +116,7 @@ describe('handleQuery', () => {
 
       const result = await handleQuery('pregunta');
 
-      expect(result.databaseResults).toEqual({ topic: 'campaigns', total: 5 });
+      expect(result.databaseResults).toEqual({ table: 'campaigns', total: 5 });
     });
 
     it('retorna documentsUsed como undefined', async () => {
@@ -150,24 +170,24 @@ describe('handleQuery', () => {
     });
   });
 
-  describe('fuente "combined"', () => {
-    it('llama a searchDatabase y a searchRag', async () => {
-      mockClassifyIntent.mockResolvedValue(COMBINED_CLASSIFICATION);
+  describe('fuente "hybrid"', () => {
+    it('llama a searchDatabase con la clasificación y a searchRag', async () => {
+      mockClassifyIntent.mockResolvedValue(HYBRID_CLASSIFICATION);
       mockSearchDatabase.mockResolvedValue(DB_RESULT);
       mockSearchRag.mockResolvedValue(RAG_RESULT);
 
-      await handleQuery('¿Cuántos leads tienen las campañas activas según el manual?');
+      await handleQuery('¿Qué prospectos de alto interés necesitan seguimiento y qué guion debo usar?');
 
-      expect(mockSearchDatabase).toHaveBeenCalled();
+      expect(mockSearchDatabase).toHaveBeenCalledWith(HYBRID_CLASSIFICATION);
       expect(mockSearchRag).toHaveBeenCalled();
     });
 
     it('incluye contexto de ambas fuentes al llamar a generateAnswer', async () => {
-      mockClassifyIntent.mockResolvedValue(COMBINED_CLASSIFICATION);
+      mockClassifyIntent.mockResolvedValue(HYBRID_CLASSIFICATION);
       mockSearchDatabase.mockResolvedValue(DB_RESULT);
       mockSearchRag.mockResolvedValue(RAG_RESULT);
 
-      await handleQuery('pregunta combinada');
+      await handleQuery('pregunta híbrida');
 
       expect(mockGenerateAnswer).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -178,11 +198,32 @@ describe('handleQuery', () => {
     });
   });
 
+  describe('fuente "general"', () => {
+    it('no llama a searchDatabase ni a searchRag', async () => {
+      mockClassifyIntent.mockResolvedValue(GENERAL_CLASSIFICATION);
+
+      await handleQuery('Explícame qué es un prospecto de ventas.');
+
+      expect(mockSearchDatabase).not.toHaveBeenCalled();
+      expect(mockSearchRag).not.toHaveBeenCalled();
+    });
+
+    it('llama a generateAnswer sin contexto de fuentes', async () => {
+      mockClassifyIntent.mockResolvedValue(GENERAL_CLASSIFICATION);
+
+      await handleQuery('Explícame qué es un prospecto de ventas.');
+
+      expect(mockGenerateAnswer).toHaveBeenCalledWith(
+        expect.objectContaining({ databaseContext: undefined, documentContext: undefined })
+      );
+    });
+  });
+
   describe('fuente "unsupported"', () => {
     it('retorna respuesta segura en español sin llamar al LLM', async () => {
       mockClassifyIntent.mockResolvedValue(UNSUPPORTED_CLASSIFICATION);
 
-      const result = await handleQuery('¿Cuál es la capital de Francia?');
+      const result = await handleQuery('Borra todas las llamadas.');
 
       expect(mockGenerateAnswer).not.toHaveBeenCalled();
       expect(result.answer).toMatch(/call center de ventas/i);

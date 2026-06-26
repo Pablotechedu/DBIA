@@ -10,7 +10,19 @@ const mockHandleQuery = handleQuery as jest.MockedFunction<typeof handleQuery>;
 
 const MOCK_RESPONSE: QueryResponse = {
   question: '¿Cuántas campañas activas hay?',
-  classification: { source: 'database', confidence: 0.95, reasoning: 'Consulta de campañas.' },
+  classification: {
+    source: 'database',
+    intent: 'Consulta de campañas activas.',
+    confidence: 0.95,
+    entities: {
+      table: 'campaigns',
+      leadStatus: null,
+      interestLevel: null,
+      agentName: null,
+      campaignStatus: 'active',
+      documentTopic: null,
+    },
+  },
   answer: 'Hay 3 campañas activas en el sistema.',
   databaseResults: { total: 3 },
 };

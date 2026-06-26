@@ -5,7 +5,8 @@ import { searchRag } from './ragSearchService';
 import type { QueryResponse } from '../types/query';
 
 const RESPUESTA_NO_SOPORTADA =
-  'Lo siento, esta consulta no está relacionada con las operaciones del call center de ventas. ' +
+  'Lo siento, esta consulta no está relacionada con las operaciones del call center de ventas o ' +
+  'es una solicitud que no puede procesarse de forma segura. ' +
   'Por favor, reformule su pregunta sobre campañas, prospectos, agentes, llamadas o procedimientos de ventas.';
 
 export async function handleQuery(question: string): Promise<QueryResponse> {
@@ -24,17 +25,19 @@ export async function handleQuery(question: string): Promise<QueryResponse> {
   let databaseResults: Record<string, unknown> | undefined;
   let documentsUsed: Record<string, unknown>[] | undefined;
 
-  if (classification.source === 'database' || classification.source === 'combined') {
-    const dbResult = await searchDatabase(question);
+  if (classification.source === 'database' || classification.source === 'hybrid') {
+    const dbResult = await searchDatabase(classification);
     databaseContext = dbResult.answer;
     databaseResults = dbResult.metadata;
   }
 
-  if (classification.source === 'rag' || classification.source === 'combined') {
+  if (classification.source === 'rag' || classification.source === 'hybrid') {
     const ragResult = await searchRag(question);
     documentContext = ragResult.answer;
     documentsUsed = ragResult.metadata ? [ragResult.metadata] : [];
   }
+
+  // Para consultas 'general' no se consultan fuentes internas; el LLM responde con su conocimiento.
 
   const answer = await generateAnswer({
     question,

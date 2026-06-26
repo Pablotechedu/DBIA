@@ -59,14 +59,49 @@ describe('ingestTextDocument', () => {
       expect(docsArg[0].pageContent).toBe('Contenido extenso para fragmentar.');
     });
 
-    it('propaga la metadata al documento fragmentado', async () => {
+    it('incluye title en la metadata cuando se proporciona', async () => {
       const { splitDocuments } = buildMocks(makeChunks(2));
-      const metadata = { filename: 'manual.txt', category: 'ventas' };
 
-      await ingestTextDocument({ content: 'Texto.', metadata });
+      await ingestTextDocument({ content: 'Texto.', title: 'Guion de llamada inicial' });
 
       const docsArg = splitDocuments.mock.calls[0][0] as Document[];
-      expect(docsArg[0].metadata).toEqual(metadata);
+      expect(docsArg[0].metadata).toEqual(expect.objectContaining({ title: 'Guion de llamada inicial' }));
+    });
+
+    it('incluye category en la metadata cuando se proporciona', async () => {
+      const { splitDocuments } = buildMocks(makeChunks(2));
+
+      await ingestTextDocument({ content: 'Texto.', category: 'Ventas' });
+
+      const docsArg = splitDocuments.mock.calls[0][0] as Document[];
+      expect(docsArg[0].metadata).toEqual(expect.objectContaining({ category: 'Ventas' }));
+    });
+
+    it('incluye tags en la metadata cuando se proporcionan', async () => {
+      const { splitDocuments } = buildMocks(makeChunks(2));
+
+      await ingestTextDocument({ content: 'Texto.', tags: ['guion', 'llamada', 'ventas'] });
+
+      const docsArg = splitDocuments.mock.calls[0][0] as Document[];
+      expect(docsArg[0].metadata).toEqual(expect.objectContaining({ tags: ['guion', 'llamada', 'ventas'] }));
+    });
+
+    it('incluye filename en la metadata cuando se proporciona', async () => {
+      const { splitDocuments } = buildMocks(makeChunks(2));
+
+      await ingestTextDocument({ content: 'Texto.', filename: 'guion.txt' });
+
+      const docsArg = splitDocuments.mock.calls[0][0] as Document[];
+      expect(docsArg[0].metadata).toEqual(expect.objectContaining({ filename: 'guion.txt' }));
+    });
+
+    it('usa metadata vacía cuando no se proporcionan campos opcionales', async () => {
+      const { splitDocuments } = buildMocks(makeChunks(1));
+
+      await ingestTextDocument({ content: 'Texto.' });
+
+      const docsArg = splitDocuments.mock.calls[0][0] as Document[];
+      expect(docsArg[0].metadata).toEqual({});
     });
   });
 
