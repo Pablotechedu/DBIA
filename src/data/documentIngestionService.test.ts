@@ -1,95 +1,104 @@
-import { ingestDocument } from './documentIngestionService';
+import { ingestTextDocument } from './documentIngestionService';
 import { getEmbeddingModel } from '../ai/embeddingModel';
 import { getSupabaseClient } from '../db/supabaseClient';
+import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
+import { SupabaseVectorStore } from '@langchain/community/vectorstores/supabase';
+import { Document } from '@langchain/core/documents';
 
 jest.mock('../ai/embeddingModel');
 jest.mock('../db/supabaseClient');
+jest.mock('@langchain/textsplitters');
+jest.mock('@langchain/community/vectorstores/supabase');
 
 const mockGetEmbeddingModel = getEmbeddingModel as jest.MockedFunction<typeof getEmbeddingModel>;
 const mockGetSupabaseClient = getSupabaseClient as jest.MockedFunction<typeof getSupabaseClient>;
+const MockSplitter = RecursiveCharacterTextSplitter as jest.MockedClass<typeof RecursiveCharacterTextSplitter>;
+const mockFromDocuments = SupabaseVectorStore.fromDocuments as jest.MockedFunction<
+  typeof SupabaseVectorStore.fromDocuments
+>;
 
-const FAKE_EMBEDDING = Array(768).fill(0.1) as number[];
+const FAKE_EMBEDDINGS = { embedDocuments: jest.fn() };
+const FAKE_CLIENT = { from: jest.fn() };
 
-function buildMocks(insertResult: { error: { message: string } | null }) {
-  const insertFn = jest.fn().mockResolvedValue(insertResult);
-  const fromFn = jest.fn().mockReturnValue({ insert: insertFn });
-  mockGetSupabaseClient.mockReturnValue({ from: fromFn } as unknown as ReturnType<typeof getSupabaseClient>);
+function buildMocks(chunks: Document[]) {
+  const splitDocuments = jest.fn().mockResolvedValue(chunks);
+  MockSplitter.mockImplementation(() => ({ splitDocuments }) as unknown as RecursiveCharacterTextSplitter);
 
-  const embedDocumentsFn = jest.fn().mockResolvedValue([FAKE_EMBEDDING]);
-  mockGetEmbeddingModel.mockReturnValue({ embedDocuments: embedDocumentsFn } as unknown as ReturnType<typeof getEmbeddingModel>);
+  mockGetEmbeddingModel.mockReturnValue(FAKE_EMBEDDINGS as unknown as ReturnType<typeof getEmbeddingModel>);
+  mockGetSupabaseClient.mockReturnValue(FAKE_CLIENT as unknown as ReturnType<typeof getSupabaseClient>);
+  mockFromDocuments.mockResolvedValue({} as unknown as SupabaseVectorStore);
 
-  return { fromFn, insertFn, embedDocumentsFn };
+  return { splitDocuments };
 }
 
-describe('ingestDocument', () => {
+function makeChunks(n: number): Document[] {
+  return Array.from({ length: n }, (_, i) => new Document({ pageContent: `fragmento ${i}`, metadata: {} }));
+}
+
+describe('ingestTextDocument', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  describe('generación de embeddings', () => {
-    it('llama a embedDocuments con el contenido proporcionado', async () => {
-      const { embedDocumentsFn } = buildMocks({ error: null });
+  describe('fragmentación (chunking)', () => {
+    it('configura el divisor con chunkSize 800 y chunkOverlap 120', async () => {
+      buildMocks(makeChunks(3));
 
-      await ingestDocument('Manual de ventas del call center.');
+      await ingestTextDocument({ content: 'Manual largo de ventas.' });
 
-      expect(embedDocumentsFn).toHaveBeenCalledWith(['Manual de ventas del call center.']);
+      expect(MockSplitter).toHaveBeenCalledWith({ chunkSize: 800, chunkOverlap: 120 });
     });
 
-    it('llama a embedDocuments exactamente una vez por documento', async () => {
-      const { embedDocumentsFn } = buildMocks({ error: null });
+    it('divide el documento en fragmentos antes de almacenarlo', async () => {
+      const { splitDocuments } = buildMocks(makeChunks(3));
 
-      await ingestDocument('Contenido de prueba.');
+      await ingestTextDocument({ content: 'Contenido extenso para fragmentar.' });
 
-      expect(embedDocumentsFn).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe('inserción en Supabase', () => {
-    it('inserta en la tabla documents', async () => {
-      const { fromFn } = buildMocks({ error: null });
-
-      await ingestDocument('Texto de ejemplo.');
-
-      expect(fromFn).toHaveBeenCalledWith('documents');
+      expect(splitDocuments).toHaveBeenCalledTimes(1);
+      const docsArg = splitDocuments.mock.calls[0][0] as Document[];
+      expect(docsArg[0].pageContent).toBe('Contenido extenso para fragmentar.');
     });
 
-    it('incluye content, metadata y embedding en el insert', async () => {
-      const { insertFn } = buildMocks({ error: null });
-      const meta = { fuente: 'manual', version: 1 };
+    it('propaga la metadata al documento fragmentado', async () => {
+      const { splitDocuments } = buildMocks(makeChunks(2));
+      const metadata = { filename: 'manual.txt', category: 'ventas' };
 
-      await ingestDocument('Texto con metadata.', meta);
+      await ingestTextDocument({ content: 'Texto.', metadata });
 
-      expect(insertFn).toHaveBeenCalledWith({
-        content: 'Texto con metadata.',
-        metadata: meta,
-        embedding: FAKE_EMBEDDING,
-      });
-    });
-
-    it('usa metadata vacía por defecto cuando no se proporciona', async () => {
-      const { insertFn } = buildMocks({ error: null });
-
-      await ingestDocument('Texto sin metadata.');
-
-      expect(insertFn).toHaveBeenCalledWith(
-        expect.objectContaining({ metadata: {} })
-      );
+      const docsArg = splitDocuments.mock.calls[0][0] as Document[];
+      expect(docsArg[0].metadata).toEqual(metadata);
     });
   });
 
-  describe('manejo de errores', () => {
-    it('lanza un error descriptivo en español cuando Supabase falla', async () => {
-      buildMocks({ error: { message: 'duplicate key value' } });
+  describe('almacenamiento vectorial', () => {
+    it('almacena los fragmentos con SupabaseVectorStore.fromDocuments', async () => {
+      const chunks = makeChunks(4);
+      buildMocks(chunks);
 
-      await expect(ingestDocument('Documento duplicado.')).rejects.toThrow(
-        /ingestar documento/i
+      await ingestTextDocument({ content: 'Documento.' });
+
+      expect(mockFromDocuments).toHaveBeenCalledTimes(1);
+      expect(mockFromDocuments).toHaveBeenCalledWith(
+        chunks,
+        FAKE_EMBEDDINGS,
+        expect.objectContaining({ tableName: 'documents', queryName: 'match_documents' })
       );
     });
 
-    it('el mensaje de error incluye el detalle original de Supabase', async () => {
-      buildMocks({ error: { message: 'connection refused' } });
+    it('retorna la cantidad de fragmentos generados', async () => {
+      buildMocks(makeChunks(5));
 
-      await expect(ingestDocument('Texto.')).rejects.toThrow('connection refused');
+      const result = await ingestTextDocument({ content: 'Documento.' });
+
+      expect(result).toEqual({ chunksIngested: 5 });
+    });
+  });
+
+  describe('validación', () => {
+    it('lanza un error cuando el contenido está vacío', async () => {
+      buildMocks(makeChunks(0));
+
+      await expect(ingestTextDocument({ content: '   ' })).rejects.toThrow(/contenido/i);
     });
   });
 });

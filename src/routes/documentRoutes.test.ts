@@ -1,15 +1,14 @@
 import request from 'supertest';
 import express, { NextFunction, Request, Response } from 'express';
 import documentRoutes from './documentRoutes';
-import { ingestDocument } from '../data/documentIngestionService';
+import { ingestTextDocument } from '../data/documentIngestionService';
 
 jest.mock('../data/documentIngestionService');
 
-const mockIngestDocument = ingestDocument as jest.MockedFunction<typeof ingestDocument>;
+const mockIngestTextDocument = ingestTextDocument as jest.MockedFunction<typeof ingestTextDocument>;
 
 function buildApp() {
   const app = express();
-  app.use(express.json());
   app.use('/api/documents', documentRoutes);
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     res.status(500).json({ error: 'Error interno del servidor' });
@@ -17,89 +16,89 @@ function buildApp() {
   return app;
 }
 
+const TXT = Buffer.from('Manual de ventas del call center con suficiente contenido.', 'utf-8');
+
 describe('POST /api/documents/ingest', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   describe('solicitudes válidas', () => {
-    it('retorna 201 cuando se ingesta un documento correctamente', async () => {
-      mockIngestDocument.mockResolvedValue(undefined);
+    it('retorna 201 cuando se ingesta un archivo .txt correctamente', async () => {
+      mockIngestTextDocument.mockResolvedValue({ chunksIngested: 3 });
       const app = buildApp();
 
       const res = await request(app)
         .post('/api/documents/ingest')
-        .send({ content: 'Manual de ventas.' });
+        .attach('file', TXT, 'manual.txt');
 
       expect(res.status).toBe(201);
     });
 
-    it('responde con mensaje de confirmación en español', async () => {
-      mockIngestDocument.mockResolvedValue(undefined);
+    it('responde con mensaje en español y la cantidad de fragmentos', async () => {
+      mockIngestTextDocument.mockResolvedValue({ chunksIngested: 5 });
       const app = buildApp();
 
       const res = await request(app)
         .post('/api/documents/ingest')
-        .send({ content: 'Guía de productos.' });
+        .attach('file', TXT, 'guia.txt');
 
       expect(res.body).toHaveProperty('mensaje');
       expect(typeof res.body.mensaje).toBe('string');
+      expect(res.body).toHaveProperty('chunksIngested', 5);
     });
 
-    it('pasa el content al servicio de ingesta', async () => {
-      mockIngestDocument.mockResolvedValue(undefined);
+    it('lee el contenido del archivo y lo pasa al servicio de ingesta', async () => {
+      mockIngestTextDocument.mockResolvedValue({ chunksIngested: 1 });
       const app = buildApp();
 
       await request(app)
         .post('/api/documents/ingest')
-        .send({ content: 'Procedimientos internos.' });
+        .attach('file', Buffer.from('Procedimientos internos.', 'utf-8'), 'proc.txt');
 
-      expect(mockIngestDocument).toHaveBeenCalledWith(
-        'Procedimientos internos.',
-        undefined
+      expect(mockIngestTextDocument).toHaveBeenCalledWith(
+        expect.objectContaining({ content: 'Procedimientos internos.' })
       );
     });
 
-    it('pasa metadata opcional al servicio cuando se proporciona', async () => {
-      mockIngestDocument.mockResolvedValue(undefined);
+    it('incluye el nombre del archivo en la metadata', async () => {
+      mockIngestTextDocument.mockResolvedValue({ chunksIngested: 1 });
       const app = buildApp();
-      const meta = { tipo: 'manual', version: 2 };
 
       await request(app)
         .post('/api/documents/ingest')
-        .send({ content: 'Texto con metadata.', metadata: meta });
+        .attach('file', TXT, 'politicas.txt');
 
-      expect(mockIngestDocument).toHaveBeenCalledWith('Texto con metadata.', meta);
+      const arg = mockIngestTextDocument.mock.calls[0][0];
+      expect(arg.metadata).toEqual(expect.objectContaining({ filename: 'politicas.txt' }));
     });
   });
 
   describe('validación de entrada', () => {
-    it('retorna 400 cuando falta el campo content', async () => {
+    it('retorna 400 cuando no se envía ningún archivo', async () => {
       const app = buildApp();
 
-      const res = await request(app)
-        .post('/api/documents/ingest')
-        .send({});
+      const res = await request(app).post('/api/documents/ingest');
 
       expect(res.status).toBe(400);
     });
 
-    it('retorna 400 cuando content es una cadena vacía', async () => {
+    it('retorna 400 cuando el archivo no es .txt', async () => {
       const app = buildApp();
 
       const res = await request(app)
         .post('/api/documents/ingest')
-        .send({ content: '' });
+        .attach('file', TXT, 'documento.pdf');
 
       expect(res.status).toBe(400);
     });
 
-    it('retorna 400 cuando content no es una cadena de texto', async () => {
+    it('retorna 400 cuando el archivo está vacío', async () => {
       const app = buildApp();
 
       const res = await request(app)
         .post('/api/documents/ingest')
-        .send({ content: 123 });
+        .attach('file', Buffer.from('', 'utf-8'), 'vacio.txt');
 
       expect(res.status).toBe(400);
     });
@@ -107,20 +106,20 @@ describe('POST /api/documents/ingest', () => {
     it('no llama al servicio cuando la validación falla', async () => {
       const app = buildApp();
 
-      await request(app).post('/api/documents/ingest').send({});
+      await request(app).post('/api/documents/ingest');
 
-      expect(mockIngestDocument).not.toHaveBeenCalled();
+      expect(mockIngestTextDocument).not.toHaveBeenCalled();
     });
   });
 
   describe('manejo de errores del servicio', () => {
     it('retorna 500 cuando el servicio de ingesta lanza un error', async () => {
-      mockIngestDocument.mockRejectedValue(new Error('Fallo de conexión'));
+      mockIngestTextDocument.mockRejectedValue(new Error('Fallo de conexión'));
       const app = buildApp();
 
       const res = await request(app)
         .post('/api/documents/ingest')
-        .send({ content: 'Documento válido.' });
+        .attach('file', TXT, 'manual.txt');
 
       expect(res.status).toBe(500);
     });

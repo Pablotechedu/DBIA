@@ -93,27 +93,28 @@ curl http://localhost:3000/health
 
 ### `POST /api/documents/ingest`
 
-Ingesta un documento de texto en la base de conocimiento (genera embedding y almacena en Supabase).
+Ingesta un archivo de texto (`.txt`) en la base de conocimiento. El servidor lee el contenido del
+archivo, lo divide en fragmentos (chunks) con solapamiento, genera los embeddings y los almacena en
+Supabase mediante `SupabaseVectorStore`.
+
+La solicitud usa `multipart/form-data` con el archivo en el campo `file`.
 
 ```bash
 curl -X POST http://localhost:3000/api/documents/ingest \
-  -H "Content-Type: application/json" \
-  -d '{
-    "content": "El producto Seguro Auto Premium cubre daños por colisión, robo total y gastos médicos...",
-    "metadata": { "categoria": "seguros", "producto": "Seguro Auto Premium" }
-  }'
+  -F "file=@./docs/seguro_auto_premium.txt" \
+  -F "category=seguros"
 ```
 
-**Cuerpo de la solicitud:**
+**Campos del formulario:**
 
 | Campo | Tipo | Requerido | Descripción |
 |---|---|---|---|
-| `content` | `string` | Sí | Texto del documento a indexar |
-| `metadata` | `object` | No | Metadatos adicionales del documento |
+| `file` | `archivo .txt` | Sí | Documento de texto plano a indexar |
+| `category` | `string` | No | Categoría del documento (se guarda en la metadata) |
 
 **Respuesta exitosa (201):**
 ```json
-{ "mensaje": "Documento ingestado correctamente." }
+{ "mensaje": "Documento ingestado correctamente.", "chunksIngested": 5 }
 ```
 
 ---
